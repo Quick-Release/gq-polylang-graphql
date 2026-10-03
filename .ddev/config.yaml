@@ -1,0 +1,4 @@
+name: gq-polylang-graphql-testsite
+type: wordpress
+docroot: .test-site
+php_version: "8.3"

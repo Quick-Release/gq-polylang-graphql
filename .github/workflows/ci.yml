@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: PHPCS + PHPStan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          coverage: none
+          tools: composer:v2
+      - uses: ramsey/composer-install@v3
+      - run: composer lint
+      - run: composer analyse -- --error-format=github
+
+  integration:
+    name: Integration (WPGraphQL ${{ matrix.wpgraphql || 'latest' }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        wpgraphql: ["", "2.0.0"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ddev/github-action-setup-ddev@v1
+        with:
+          autostart: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Integration tests against WordPress, WPGraphQL and Polylang
+        env:
+          WPGRAPHQL_VERSION: ${{ matrix.wpgraphql }}
+        run: tests/integration/run.sh

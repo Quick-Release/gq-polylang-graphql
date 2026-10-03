@@ -1,0 +1,12 @@
+parameters:
+  level: 6
+  paths:
+    - gq-polylang-graphql.php
+    - src
+  scanDirectories:
+    - vendor/wpsyntex/polylang-stubs
+    - vendor/axepress/wp-graphql-stubs
+  bootstrapFiles:
+    - vendor/wpsyntex/polylang-stubs/polylang-stubs.php
+  # Filter callbacks guard what other plugins may pass, whatever the docblocks say.
+  treatPhpDocTypesAsCertain: false

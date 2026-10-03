@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<ruleset name="gq-polylang-graphql">
+	<description>WordPress Coding Standards, PHP 7.4+.</description>
+	<file>gq-polylang-graphql.php</file>
+	<file>src</file>
+	<file>tests/integration/fixture.php</file>
+	<arg name="extensions" value="php"/>
+	<arg value="sp"/>
+	<config name="testVersion" value="7.4-"/>
+	<config name="minimum_wp_version" value="6.5"/>
+	<rule ref="WordPress">
+		<!-- Classes are named class-<name>.php, as WordPress names them. -->
+		<exclude name="Universal.Files.SeparateFunctionsFromOO"/>
+	</rule>
+	<rule ref="PHPCompatibilityWP"/>
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array"><element value="gq-polylang-graphql"/></property>
+		</properties>
+	</rule>
+	<!-- WPGraphQL's models name their properties in camelCase. -->
+	<rule ref="WordPress.NamingConventions.ValidVariableName">
+		<properties>
+			<property name="allowed_custom_properties" type="array"><element value="databaseId"/></property>
+		</properties>
+	</rule>
+	<rule ref="WordPress.Files.FileName.InvalidClassFileName">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+</ruleset>
