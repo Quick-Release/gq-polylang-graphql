@@ -5,3 +5,4 @@
 /phpstan.neon.dist export-ignore
 /.gitignore export-ignore
 /.gitattributes export-ignore
+/composer.lock export-ignore

@@ -39,6 +39,6 @@
     "analyse": "phpstan analyse --memory-limit=1G"
   },
   "archive": {
-    "exclude": ["/.ddev", "/.github", "/tests", "/phpcs.xml.dist", "/phpstan.neon.dist", "/.gitignore", "/.gitattributes"]
+    "exclude": ["/composer.lock", "/.ddev", "/.github", "/tests", "/phpcs.xml.dist", "/phpstan.neon.dist", "/.gitignore", "/.gitattributes"]
   }
 }
