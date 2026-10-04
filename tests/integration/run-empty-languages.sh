@@ -27,15 +27,17 @@ mkdir -p "$site/wp-content/plugins"
 for entry in "$core"/*.php "$core/wp-admin" "$core/wp-includes"; do
   [[ $(basename "$entry") == wp-config.php ]] || ln -s "$entry" "$site/"
 done
-for plugin in wp-graphql polylang gq-polylang-graphql; do
-  test -f "$core/wp-content/plugins/$plugin/$plugin.php"
+polylang=polylang
+[[ -d "$core/wp-content/plugins/polylang" ]] || polylang=polylang-pro
+for plugin in wp-graphql "$polylang" gq-polylang-graphql; do
+  test -d "$core/wp-content/plugins/$plugin"
   ln -s "$core/wp-content/plugins/$plugin" "$site/wp-content/plugins/$plugin"
 done
 wp() { command wp --path="$site" "$@"; }
 wp config create --dbname="$database" --dbuser=db --dbpass=db --dbhost=db
 wp core install --url=http://empty-languages.test --title='Empty languages' \
   --admin_user=admin --admin_password=admin --admin_email=admin@example.test --skip-email
-wp plugin activate wp-graphql polylang gq-polylang-graphql
+wp plugin activate wp-graphql "$polylang" gq-polylang-graphql
 
 # Separate WP loads mirror independent requests and avoid schema/model caches.
 assertions=/var/www/html/tests/integration/empty-languages.php

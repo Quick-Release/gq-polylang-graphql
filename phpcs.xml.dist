@@ -5,6 +5,7 @@
 	<file>src</file>
 	<file>tests/integration/fixture.php</file>
 	<file>tests/integration/empty-languages.php</file>
+	<file>tests/integration/check-stack.php</file>
 	<file>tests/integration/translation-batching-fixture.php</file>
 	<file>tests/integration/translation-batching.php</file>
 	<arg name="extensions" value="php"/>

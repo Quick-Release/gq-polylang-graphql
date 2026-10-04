@@ -29,19 +29,25 @@ mkdir -p "$site/wp-content/plugins"
 for entry in "$core"/*.php "$core/wp-admin" "$core/wp-includes"; do
   [[ $(basename "$entry") == wp-config.php ]] || ln -s "$entry" "$site/"
 done
-for plugin in wp-graphql polylang gq-polylang-graphql; do
-  test -f "$core/wp-content/plugins/$plugin/$plugin.php"
+polylang=polylang
+[[ -d "$core/wp-content/plugins/polylang" ]] || polylang=polylang-pro
+for plugin in wp-graphql "$polylang" gq-polylang-graphql; do
+  test -d "$core/wp-content/plugins/$plugin"
   ln -s "$core/wp-content/plugins/$plugin" "$site/wp-content/plugins/$plugin"
 done
 wp() { command wp --path="$site" "$@"; }
 wp config create --dbname="$database" --dbuser=db --dbpass=db --dbhost=db
 wp core install --url=http://translation-batching.test --title='Translation batching' \
   --admin_user=admin --admin_password=admin --admin_email=admin@example.test --skip-email
-wp plugin activate wp-graphql polylang gq-polylang-graphql
+wp plugin activate wp-graphql "$polylang" gq-polylang-graphql
+wp user create gq_batch_subscriber subscriber@example.test --role=subscriber
 
 wp eval-file /var/www/html/tests/integration/translation-batching-fixture.php
 for sample in 1 2 3; do
   wp eval-file /var/www/html/tests/integration/translation-batching.php "$mode"
 done
 wp eval-file /var/www/html/tests/integration/translation-batching.php "$mode" admin
+wp eval-file /var/www/html/tests/integration/translation-batching.php "$mode" subscriber
+# Recheck public visibility after both authenticated runs.
+wp eval-file /var/www/html/tests/integration/translation-batching.php "$mode"
 SH

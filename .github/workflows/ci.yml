@@ -28,12 +28,23 @@ jobs:
       - run: composer analyse -- --error-format=github
 
   integration:
-    name: Integration (WPGraphQL ${{ matrix.wpgraphql || 'latest' }})
+    name: Integration (${{ matrix.stack }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        wpgraphql: ["", "2.0.0"]
+        # Include-only: these are compatible stacks, not a Cartesian product.
+        include:
+          - stack: minimum
+            wordpress: "6.5"
+            php: "7.4"
+            wpgraphql: "2.0.0"
+            polylang: "3.7"
+          - stack: current
+            wordpress: "7.1.2"
+            php: "8.4"
+            wpgraphql: "2.23.1"
+            polylang: "3.8.10"
     steps:
       - uses: actions/checkout@v4
       - uses: ddev/github-action-setup-ddev@v1
@@ -42,7 +53,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Verify disposable setup guards
+        run: tests/integration/check-setup-safety.sh
       - name: Integration tests against WordPress, WPGraphQL and Polylang
         env:
+          WORDPRESS_VERSION: ${{ matrix.wordpress }}
+          PHP_VERSION: ${{ matrix.php }}
           WPGRAPHQL_VERSION: ${{ matrix.wpgraphql }}
+          POLYLANG_VERSION: ${{ matrix.polylang }}
         run: tests/integration/run.sh

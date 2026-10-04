@@ -34,6 +34,22 @@ A headless frontend can:
 - WPGraphQL 2.x.
 - Polylang or Polylang Pro 3.7+.
 
+These are this plugin's minimums; newer dependency releases can require newer
+WordPress/PHP. CI uses two explicitly compatible stacks, not every combination:
+
+| Stack | WordPress | PHP | WPGraphQL | Polylang |
+| --- | --- | --- | --- | --- |
+| Minimum | 6.5 | 7.4 | 2.0.0 | 3.7 |
+| Current (pinned) | 7.1.2 | 8.4 | 2.23.1 | 3.8.10 |
+
+Polylang 3.7 declares WordPress 6.2+/PHP 7.2+; WPGraphQL 2.0.0 declares
+WordPress 6.0+/PHP 7.4+, so they can exercise this plugin's advertised floor.
+Setup verifies the installed versions, WordPress's PHP requirement, and both
+plugin headers and readme dependency requirements before activation. Update the
+current pins together after checking those constraints; do not pair the oldest
+WordPress with arbitrary latest plugins. PHP 7.4 is EOL and included only for
+compatibility testing, not as a deployment recommendation.
+
 ## Install
 
 With Composer:
@@ -164,19 +180,45 @@ The names match where the meaning does: `Language`, `LanguageCodeEnum`,
 
 ## Development
 
-`tests/integration/run.sh` runs the integration tests. It creates a disposable
-[DDEV](https://ddev.com) WordPress in `.test-site` with WPGraphQL and Polylang
-from WordPress.org, and builds a bilingual site (`tests/integration/fixture.php`).
-Then `tests/integration/graphql.test.mjs` queries it over HTTP, as a headless
-frontend would.
+`tests/integration/run.sh` runs the full integration suite. Use a fresh checkout
+with its own [DDEV](https://ddev.com) project/database: it installs WordPress in
+`.test-site`, resets **only that disposable database**, installs WPGraphQL and
+Polylang from WordPress.org, and builds the bilingual fixture. It refuses an
+existing unmarked `.test-site`; do not add its disposable marker to an existing
+site to bypass this protection. Marked disposable runs are destructive on rerun.
+It also refuses configurations targeting a database other than DDEV's `db`.
+
+The HTTP suite queries it as an anonymous headless frontend. Then all existing
+isolated suites run against the same installed versions: nested menus,
+empty-language setup, URL configurations, language enums, and translation
+batching/visibility. Each isolated suite creates and cleans up its own temporary
+database, never resetting the base site's database.
 
 ```sh
 composer install
 composer lint        # WordPress Coding Standards, PHP 7.4+
 composer analyse     # PHPStan
-tests/integration/run.sh
-POLYLANG_DIR=../polylang-pro tests/integration/run.sh   # against Polylang Pro
+tests/integration/run.sh   # fresh disposable checkout; defaults to latest
+WORDPRESS_VERSION=6.5 PHP_VERSION=7.4 WPGRAPHQL_VERSION=2.0.0 \
+  POLYLANG_VERSION=3.7 tests/integration/run.sh
+POLYLANG_DIR=../polylang-pro tests/integration/run.sh   # local Pro distribution
 ```
+
+`WORDPRESS_VERSION`, `PHP_VERSION`, `WPGRAPHQL_VERSION`, and `POLYLANG_VERSION`
+select the stack. `PHP_VERSION` reconfigures/restarts the disposable DDEV project;
+the checked-in local default remains PHP 8.3. Core/plugin versions are honored on
+marked reruns too. Automatic updates and WP-Cron are disabled in the disposable
+base site; setup verifies core checksums and rechecks the stack after all suites
+to detect version drift. The test theme is Twenty Twenty-One 2.6, compatible with both
+stacks (Twenty Twenty-Five requires WordPress 6.7).
+
+Both pinned stacks passed locally, including all 9 HTTP tests and the isolated
+suites. Authenticated checks use fresh WP-CLI processes with administrator and
+subscriber identities; they do not test HTTP cookie/application-password login.
+URL checks cover directories, domains, subdomains, and query URLs under root and
+subdirectory installs, including ambiguous/wrong-language URLs. Domain routing
+is tested in-process, not with live DNS/TLS. Polylang Pro and GitHub-hosted CI
+execution remain unverified; Pro is not distributed in the public CI matrix.
 
 URL regressions can be run without resetting `.test-site`:
 
@@ -220,9 +262,10 @@ plugins with a separate temporary database (the existing database is untouched):
 tests/integration/run-translation-batching.sh
 ```
 
-This checks anonymous and administrator responses, translation ordering, empty
-lists, repeated fields, and nested term translations. It reports three cold-cache
-anonymous samples and an administrator sample. Pass `baseline` to report counts
+This checks anonymous, administrator, and subscriber responses, including private
+and draft translations, ordering, empty lists, repeated fields, and nested term
+translations. It reports three cold-cache anonymous samples, authenticated
+samples, and a final anonymous recheck. Pass `baseline` to report counts
 without enforcing performance limits when comparing resolver implementations.
 With WordPress 7.1.2, WPGraphQL 2.0.0, Polylang 3.8.10, and 21 parent posts,
 deferring the resolver reduced translation batches from 20 to 1, post-loader SQL

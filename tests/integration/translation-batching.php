@@ -51,9 +51,20 @@ function gq_batch_assert( $condition, $message ) {
 	}
 }
 
-$baseline = in_array( 'baseline', $args, true );
-$admin    = in_array( 'admin', $args, true );
-wp_set_current_user( $admin ? 1 : 0 );
+$baseline   = in_array( 'baseline', $args, true );
+$admin      = in_array( 'admin', $args, true );
+$subscriber = in_array( 'subscriber', $args, true );
+$user       = $admin ? 'admin' : ( $subscriber ? 'subscriber' : 'anonymous' );
+if ( $subscriber ) {
+	$subscriber_user = get_user_by( 'login', 'gq_batch_subscriber' );
+	gq_batch_assert( $subscriber_user instanceof WP_User, 'Missing subscriber test user.' );
+	gq_batch_assert( in_array( 'subscriber', $subscriber_user->roles, true ), 'Test user must be a subscriber.' );
+	wp_set_current_user( $subscriber_user->ID );
+	gq_batch_assert( is_user_logged_in(), 'Subscriber must be authenticated.' );
+	gq_batch_assert( ! current_user_can( 'read_private_posts' ) && ! current_user_can( 'edit_posts' ), 'Subscriber must not have private/draft access.' );
+} else {
+	wp_set_current_user( $admin ? 1 : 0 );
+}
 $fixture = get_option( 'gq_translation_batching_fixture' );
 foreach ( $fixture['all_posts'] as $id ) {
 	clean_post_cache( $id );
@@ -107,7 +118,7 @@ $translation_batches = array_values(
 WP_CLI::log(
 	wp_json_encode(
 		array(
-			'user'                    => $admin ? 'admin' : 'anonymous',
+			'user'                    => $user,
 			'parents'                 => count( $nodes ),
 			'loader_batches'          => count( GQ_Batching_Post_Loader::$batches ),
 			'translation_batches'     => count( $translation_batches ),

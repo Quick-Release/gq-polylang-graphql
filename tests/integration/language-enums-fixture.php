@@ -72,6 +72,10 @@ if ( 'basic' === $args[0] ) {
 		$gq_updated = PLL()->model->languages->update(
 			array(
 				'lang_id'    => $gq_language->term_id,
+				// Polylang 3.7 validates the full language on update.
+				'slug'       => $gq_language->slug,
+				'locale'     => $gq_language->locale,
+				'name'       => $gq_language->name,
 				'term_group' => $gq_order,
 			)
 		);

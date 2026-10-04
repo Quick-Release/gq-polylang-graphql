@@ -21,8 +21,10 @@ mkdir -p "$site/wp-content/plugins" "$site/wp-content/mu-plugins"
 for entry in "$core"/*.php "$core/wp-admin" "$core/wp-includes"; do
   [[ $(basename "$entry") == wp-config.php ]] || ln -s "$entry" "$site/"
 done
-for plugin in wp-graphql polylang gq-polylang-graphql; do
-  test -f "$core/wp-content/plugins/$plugin/$plugin.php"
+polylang=polylang
+[[ -d "$core/wp-content/plugins/polylang" ]] || polylang=polylang-pro
+for plugin in wp-graphql "$polylang" gq-polylang-graphql; do
+  test -d "$core/wp-content/plugins/$plugin"
   ln -s "$core/wp-content/plugins/$plugin" "$site/wp-content/plugins/$plugin"
 done
 printf '%s\n' '<?php add_action( "after_setup_theme", static function () { register_nav_menus( array( "primary" => "Primary", "secondary" => "Secondary" ) ); } );' > "$site/wp-content/mu-plugins/menu-locations.php"
@@ -30,7 +32,7 @@ wp() { command wp --path="$site" "$@"; }
 wp config create --dbname="$database" --dbuser=db --dbpass=db --dbhost=db
 wp core install --url=http://nested-menus.test --title='Nested menus' \
   --admin_user=admin --admin_password=admin --admin_email=admin@example.test --skip-email
-wp plugin activate wp-graphql polylang gq-polylang-graphql
+wp plugin activate wp-graphql "$polylang" gq-polylang-graphql
 wp eval-file /var/www/html/tests/integration/fixture.php
 wp eval-file /var/www/html/tests/integration/hierarchical-menus-fixture.php
 wp user create reader reader@example.test --role=subscriber --user_pass=reader

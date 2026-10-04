@@ -1,4 +1,5 @@
 name: gq-polylang-graphql-testsite
 type: wordpress
 docroot: .test-site
+# Local default; disposable integration setup accepts PHP_VERSION for CI stacks.
 php_version: "8.3"
