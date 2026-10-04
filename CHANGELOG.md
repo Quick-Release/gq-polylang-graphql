@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.3
+
+- **Fix:** resolve separate language domains and subdomains regardless of the host's letter case (`ENGLISH.TEST` as `english.test`). Paths, query parameters and language slugs stay case-sensitive.
+- **Fix:** a language on its own domain or subdomain without a translated static front page resolves its home to null instead of the default language's front page.
+- **Fix:** `#comment-ID` URLs resolve only in their post's language, through the comment loader's visibility checks.
+- **Tests:** URL regressions cover lowercase, uppercase and mixed-case hosts in every URL mode, root and subdirectory installations, unknown hosts, and comment URLs.
+
 ## 0.1.2
 
 - **Fix:** resolve language URLs consistently across directories, separate domains/subdomains, query URLs, and subdirectory installations; reject ambiguous hosts and wrong-language content.
