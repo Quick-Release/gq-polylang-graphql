@@ -347,4 +347,74 @@ try {
 	}
 	wp_delete_post( $gq_lang_less, true );
 }
+
+/**
+ * A URL with only its host transformed.
+ *
+ * @param string   $url       Absolute URL.
+ * @param callable $transform Host transformation.
+ */
+function gq_with_host( string $url, callable $transform ): string {
+	$host = (string) wp_parse_url( $url, PHP_URL_HOST );
+	return (string) preg_replace( '#^(\w+://)' . preg_quote( $host, '#' ) . '#', '${1}' . $transform( $host ), $url, 1 );
+}
+
+/**
+ * A host with each label capitalized: English.Test.
+ *
+ * @param string $host Host.
+ */
+function gq_mixed_case( string $host ): string {
+	return implode( '.', array_map( 'ucfirst', explode( '.', $host ) ) );
+}
+
+/**
+ * A URL with one more lang selector.
+ *
+ * @param string $url  URL.
+ * @param string $lang Language selector.
+ */
+function gq_with_lang( string $url, string $lang ): string {
+	return $url . ( false === strpos( $url, '?' ) ? '?' : '&' ) . 'lang=' . $lang;
+}
+
+// Hosts compare case-insensitively, in every mode and on every language's
+// host; paths, query parameters, and language slugs stay case-sensitive.
+foreach ( array( 'strtolower', 'strtoupper', 'gq_mixed_case' ) as $gq_case ) {
+	$gq_en = gq_with_host( $gq_homes['en'], $gq_case );
+	$gq_pt = gq_with_host( $gq_homes['pt'], $gq_case );
+	gq_assert_homes(
+		array(
+			'pt' => $gq_pt,
+			'en' => $gq_en,
+		),
+		array(
+			'pt' => $gq_ids['inicio'],
+			'en' => $gq_ids['home'],
+		)
+	);
+	gq_assert_url( gq_page_url( $gq_en, 'about', $gq_mode ), $gq_ids['about'] );
+	gq_assert_url( gq_page_url( $gq_pt, 'sobre', $gq_mode ), $gq_ids['sobre'] );
+	gq_assert_url( gq_page_url( $gq_en, 'sobre', $gq_mode ), null );
+	gq_assert_url( gq_page_url( $gq_pt, 'about', $gq_mode ), null );
+	// Conflicting or differently cased language selectors.
+	gq_assert_url( gq_with_lang( gq_page_url( $gq_en, 'about', $gq_mode ), 'pt' ), null );
+	gq_assert_url( gq_with_lang( gq_page_url( $gq_pt, 'sobre', $gq_mode ), 'en' ), null );
+	if ( 'query' !== $gq_mode ) {
+		gq_assert_url( gq_with_lang( gq_page_url( $gq_en, 'about', $gq_mode ), 'en' ), $gq_ids['about'] );
+		gq_assert_url( gq_with_lang( gq_page_url( $gq_en, 'about', $gq_mode ), 'EN' ), null );
+	} else {
+		gq_assert_url( str_replace( 'lang=en', 'lang=EN', gq_page_url( $gq_en, 'about', $gq_mode ) ), null );
+	}
+	// Unknown hosts, a cased subdirectory, userinfo, and unsupported schemes.
+	foreach ( array( 'http://unrelated.test', 'http://english.test.unrelated', 'http://urls.test.unrelated', 'http://en.unrelated.test' ) as $gq_unknown ) {
+		gq_assert_url( gq_with_host( $gq_unknown . $gq_base . '/', $gq_case ), null );
+	}
+	if ( '' !== $gq_base ) {
+		gq_assert_url( str_replace( $gq_base . '/', strtoupper( $gq_base ) . '/', $gq_en ), null );
+	}
+	gq_assert_url( str_replace( '://', '://visitor@', $gq_en ), null );
+	gq_assert_url( str_replace( 'http://', 'ftp://', $gq_en ), null );
+	gq_assert_url( str_replace( 'http://', 'HTTP://', $gq_en ), $gq_ids['home'] );
+}
 WP_CLI::success( $gq_mode . ' ' . $args[2] . ' URL regressions passed.' );

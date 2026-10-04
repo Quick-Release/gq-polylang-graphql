@@ -193,7 +193,9 @@ final class Languages {
 		if ( null !== $host && '' !== $root && $root !== $path && 0 !== strpos( $path, $root . '/' ) ) {
 			return null;
 		}
-		if ( null !== $host && ! in_array( strtolower( $host ), array_map( 'strtolower', array_values( $model->get_hosts() ) ), true ) ) {
+		// Hosts are case-insensitive; paths, query values, and slugs are not.
+		$hosts = array_map( 'strtolower', $model->get_hosts() );
+		if ( null !== $host && ! in_array( strtolower( $host ), $hosts, true ) ) {
 			return null;
 		}
 		$query      = array();
@@ -211,7 +213,9 @@ final class Languages {
 		}
 		parse_str( $parts['query'] ?? '', $query );
 		if ( $model instanceof \PLL_Links_Abstract_Domain ) {
-			$slug = null === $host ? null : self::known_url_language( $uri );
+			// Polylang's get_language_from_url() compares hosts case-sensitively.
+			$slug = null === $host ? false : array_search( strtolower( $host ), $hosts, true );
+			$slug = is_string( $slug ) && self::get( $slug ) ? $slug : null;
 			return array_key_exists( 'lang', $query ) && $slug !== $query['lang'] ? null : $slug;
 		}
 		if ( ! $model->using_permalinks ) {
