@@ -213,6 +213,22 @@ It uses and cleans up a separate temporary database and WordPress root, checking
 ordinary queries and authenticated introspection before language configuration,
 with a language configured, and after the last language is removed.
 
+Translation batching, visibility, and query-count regressions use the installed
+plugins with a separate temporary database (the existing database is untouched):
+
+```sh
+tests/integration/run-translation-batching.sh
+```
+
+This checks anonymous and administrator responses, translation ordering, empty
+lists, repeated fields, and nested term translations. It reports three cold-cache
+anonymous samples and an administrator sample. Pass `baseline` to report counts
+without enforcing performance limits when comparing resolver implementations.
+With WordPress 7.1.2, WPGraphQL 2.0.0, Polylang 3.8.10, and 21 parent posts,
+deferring the resolver reduced translation batches from 20 to 1, post-loader SQL
+queries from 68 to 11, and total anonymous connection queries from 73 to 16
+(all three samples agreed; administrator totals were 71 to 14).
+
 ## License
 
 GPL-3.0-or-later. Made by [GETQUICK](https://getquick.io).

@@ -8,6 +8,7 @@
 
 namespace GQ\PolylangGraphQL;
 
+use GraphQL\Deferred;
 use WPGraphQL\AppContext;
 
 defined( 'ABSPATH' ) || exit;
@@ -231,8 +232,15 @@ final class Content {
 					if ( empty( $ids ) ) {
 						return array();
 					}
-					// A translation the requester can't see loads as null.
-					return array_values( array_filter( (array) $context->get_loader( $kind )->load_many( $ids, true ) ) );
+					$loader = $context->get_loader( $kind );
+					// Buffer now so sibling resolvers share a batch before it loads.
+					$loader->buffer( $ids );
+					return new Deferred(
+						static function () use ( $loader, $ids ) {
+							// Normalize through the loader first: inaccessible models are null.
+							return array_values( array_filter( (array) $loader->load_many( $ids, true ) ) );
+						}
+					);
 				},
 			)
 		);

@@ -1,4 +1,5 @@
 /.test-site/
 /vendor/
 /node_modules/
+/.agents/
 .DS_Store
