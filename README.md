@@ -215,13 +215,14 @@ base site; setup verifies core checksums and rechecks the stack after all suites
 to detect version drift. The test theme is Twenty Twenty-One 2.6, compatible with both
 stacks (Twenty Twenty-Five requires WordPress 6.7).
 
-Both pinned stacks passed locally, including all 9 HTTP tests and the isolated
-suites. Authenticated checks use fresh WP-CLI processes with administrator and
-subscriber identities; they do not test HTTP cookie/application-password login.
+Both pinned stacks passed locally and in GitHub-hosted CI, including all 9 HTTP
+tests and the isolated suites. Authenticated checks use fresh WP-CLI processes
+with administrator and subscriber identities; they do not test HTTP
+cookie/application-password login.
 URL checks cover directories, domains, subdomains, and query URLs under root and
 subdirectory installs, including ambiguous/wrong-language URLs. Domain routing
-is tested in-process, not with live DNS/TLS. Polylang Pro and GitHub-hosted CI
-execution remain unverified; Pro is not distributed in the public CI matrix.
+is tested in-process, not with live DNS/TLS. Polylang Pro remains unverified
+and is not distributed in the public CI matrix.
 
 URL regressions can be run without resetting `.test-site`:
 
