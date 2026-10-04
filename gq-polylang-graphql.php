@@ -3,7 +3,7 @@
  * Plugin Name:       GQ Polylang for WPGraphQL
  * Plugin URI:        https://github.com/Quick-Release/gq-polylang-graphql
  * Description:       Exposes Polylang's languages and translations in WPGraphQL, for headless multilingual sites.
- * Version:           0.1.0
+ * Version:           0.1.1
  * Requires at least: 6.5
  * Requires PHP:      7.4
  * Requires Plugins:  wp-graphql
@@ -20,7 +20,7 @@ namespace GQ\PolylangGraphQL;
 
 defined( 'ABSPATH' ) || exit;
 
-const VERSION = '0.1.0';
+const VERSION = '0.1.1';
 
 require_once __DIR__ . '/src/class-languages.php';
 require_once __DIR__ . '/src/class-context.php';

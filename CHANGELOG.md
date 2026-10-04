@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- **Fix:** ordinary GraphQL queries and schema introspection work when Polylang has no configured languages, including after the last language is removed. Language connection inputs are omitted until languages exist; configured-language behavior is unchanged.
+- **Tests:** regression coverage for empty-language schema states uses an isolated temporary database without resetting the existing test site.
+
 ## 0.1.0
 
 First release.
