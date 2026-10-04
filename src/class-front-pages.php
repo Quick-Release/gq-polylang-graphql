@@ -135,6 +135,12 @@ final class Front_Pages {
 			if ( $page_id ) {
 				return $context->get_loader( 'post' )->load_deferred( $page_id );
 			}
+			// Untranslated: WPGraphQL's root fallback is `page_on_front`, which
+			// belongs to another language. A language-less one stays native.
+			$front_page = self::front_page();
+			if ( $front_page && pll_get_post_language( $front_page, 'slug' ) ) {
+				return self::nothing();
+			}
 		}
 
 		// NodeResolver rejects secondary domains and loses host/query before its

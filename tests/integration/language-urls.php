@@ -113,4 +113,95 @@ $gq_result = graphql(
 if ( ! empty( $gq_result['errors'] ) || $gq_result['data']['pt']['databaseId'] !== $gq_ids['inicio'] || $gq_result['data']['en']['databaseId'] !== $gq_ids['home'] ) {
 	WP_CLI::error( 'Aliased language homes: ' . wp_json_encode( $gq_result ) );
 }
+
+/**
+ * Resolves home URLs as aliases of one request and compares each result:
+ * a page's database ID, 'post' for the posts index, or null.
+ *
+ * @param array<string,string>          $uris     URIs by alias.
+ * @param array<string,int|string|null> $expected Expected results by alias.
+ */
+function gq_assert_homes( array $uris, array $expected ): void {
+	$fields = '';
+	foreach ( $uris as $alias => $uri ) {
+		$fields .= $alias . ': nodeByUri(uri: ' . wp_json_encode( $uri ) . ') { __typename ... on Page { databaseId } ... on ContentType { name } } ';
+	}
+	$result = graphql( array( 'query' => '{ ' . $fields . '}' ) );
+	foreach ( $expected as $alias => $value ) {
+		$node   = $result['data'][ $alias ] ?? null;
+		$actual = null === $node ? null : ( $node['databaseId'] ?? $node['name'] ?? $node['__typename'] );
+		if ( ! empty( $result['errors'] ) || $actual !== $value ) {
+			WP_CLI::error( 'Homes ' . wp_json_encode( $uris ) . ': expected ' . wp_json_encode( $expected ) . ', got ' . wp_json_encode( $result ) );
+		}
+	}
+}
+
+// A language without a translation of the static front page has no home
+// node, never another language's front page, alone or beside aliases.
+$gq_en_homes = array( 'en' => $gq_homes['en'] );
+if ( 'query' === $gq_mode ) {
+	$gq_en_homes['relative'] = '/?lang=en';
+} elseif ( 'directory' === $gq_mode ) {
+	$gq_en_homes['relative'] = '/en/';
+}
+$gq_missing = array_fill_keys( array_keys( $gq_en_homes ), null );
+pll_save_post_translations( array( 'pt' => $gq_ids['inicio'] ) );
+try {
+	foreach ( $gq_en_homes as $gq_uri ) {
+		gq_assert_url( $gq_uri, null );
+	}
+	gq_assert_homes( array( 'pt' => $gq_homes['pt'] ) + $gq_en_homes, array( 'pt' => $gq_ids['inicio'] ) + $gq_missing );
+	gq_assert_homes( $gq_en_homes + array( 'pt' => $gq_homes['pt'] ), $gq_missing + array( 'pt' => $gq_ids['inicio'] ) );
+} finally {
+	pll_save_post_translations(
+		array(
+			'pt' => $gq_ids['inicio'],
+			'en' => $gq_ids['home'],
+		)
+	);
+}
+
+// A translated front page the viewer cannot see stays hidden.
+wp_update_post(
+	array(
+		'ID'          => $gq_ids['home'],
+		'post_status' => 'draft',
+	)
+);
+try {
+	gq_assert_homes( array( 'pt' => $gq_homes['pt'] ) + $gq_en_homes, array( 'pt' => $gq_ids['inicio'] ) + $gq_missing );
+} finally {
+	wp_update_post(
+		array(
+			'ID'          => $gq_ids['home'],
+			'post_status' => 'publish',
+		)
+	);
+}
+
+// Without a static front page, homes WPGraphQL resolves as its own root (the
+// unprefixed one, a language's own host) stay the posts index. WPGraphQL has
+// no root for a subdirectory install's home path.
+if ( '' === $gq_base ) {
+	$gq_index = array( 'pt' => $gq_homes['pt'] );
+	if ( 'domain' === $gq_mode || 'subdomain' === $gq_mode ) {
+		$gq_index['en'] = $gq_homes['en'];
+	}
+	update_option( 'show_on_front', 'posts' );
+	try {
+		gq_assert_homes( $gq_index, array_fill_keys( array_keys( $gq_index ), 'post' ) );
+	} finally {
+		update_option( 'show_on_front', 'page' );
+	}
+}
+gq_assert_homes(
+	array(
+		'pt' => $gq_homes['pt'],
+		'en' => $gq_homes['en'],
+	),
+	array(
+		'pt' => $gq_ids['inicio'],
+		'en' => $gq_ids['home'],
+	)
+);
 WP_CLI::success( $gq_mode . ' ' . $args[2] . ' URL regressions passed.' );
