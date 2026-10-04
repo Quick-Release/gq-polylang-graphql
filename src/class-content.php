@@ -71,7 +71,8 @@ final class Content {
 	 * @return array<string,mixed>
 	 */
 	public static function where_fields( $fields, $type_name ) {
-		if ( ! is_array( $fields ) || ! self::is_translated_where_type( (string) $type_name ) ) {
+		// Schema::register() skips the language enums when none are configured.
+		if ( ! is_array( $fields ) || empty( Languages::all() ) || ! self::is_translated_where_type( (string) $type_name ) ) {
 			return $fields;
 		}
 		$fields['language']  = array(

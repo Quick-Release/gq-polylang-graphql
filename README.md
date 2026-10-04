@@ -145,6 +145,17 @@ tests/integration/run.sh
 POLYLANG_DIR=../polylang-pro tests/integration/run.sh   # against Polylang Pro
 ```
 
+The empty-language schema regression can be run without resetting `.test-site`:
+
+```sh
+tests/integration/run-empty-languages.sh
+```
+
+It requires WordPress, WPGraphQL and Polylang already installed in `.test-site`.
+It uses and cleans up a separate temporary database and WordPress root, checking
+ordinary queries and authenticated introspection before language configuration,
+with a language configured, and after the last language is removed.
+
 ## License
 
 GPL-3.0-or-later. Made by [GETQUICK](https://getquick.io).

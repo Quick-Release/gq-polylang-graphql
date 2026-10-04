@@ -4,6 +4,7 @@
 	<file>gq-polylang-graphql.php</file>
 	<file>src</file>
 	<file>tests/integration/fixture.php</file>
+	<file>tests/integration/empty-languages.php</file>
 	<arg name="extensions" value="php"/>
 	<arg value="sp"/>
 	<config name="testVersion" value="7.4-"/>
