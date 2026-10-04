@@ -23,10 +23,25 @@ defined( 'ABSPATH' ) || exit;
 final class Front_Pages {
 
 	/**
+	 * Synchronous resolver scopes, discarded even on early returns/exceptions.
+	 * Deferred loaders run later; they must not read this state.
+	 *
+	 * @var string[]
+	 */
+	private static $languages = array();
+
+	/**
+	 * Whether the next pre-hook is our delegated resolver call.
+	 *
+	 * @var bool
+	 */
+	private static $delegating = false;
+
+	/**
 	 * Hooks the URI resolver and the model fields.
 	 */
 	public static function hook(): void {
-		add_filter( 'graphql_pre_resolve_uri', array( self::class, 'resolve_uri' ), 10, 3 );
+		add_filter( 'graphql_pre_resolve_uri', array( self::class, 'resolve_uri' ), 10, 5 );
 		add_filter( 'graphql_model_prepare_fields', array( self::class, 'model_fields' ), 10, 3 );
 		add_filter( 'graphql_resolve_uri', array( self::class, 'check_language' ), 10, 3 );
 	}
@@ -56,7 +71,7 @@ final class Front_Pages {
 		if ( $queried_object instanceof \WP_Term && 'language' === $queried_object->taxonomy ) {
 			return $nothing;
 		}
-		$expected = Languages::of_path( (string) wp_parse_url( (string) $uri, PHP_URL_PATH ) );
+		$expected = self::$languages ? end( self::$languages ) : Languages::of_url( (string) $uri );
 		if ( null === $expected ) {
 			return $node;
 		}
@@ -90,19 +105,101 @@ final class Front_Pages {
 	 * @param mixed      $node    A node another filter resolved, or null.
 	 * @param string     $uri     The URI being resolved.
 	 * @param AppContext $context The request's context.
+	 * @param mixed      $wp      WordPress request object.
+	 * @param mixed      $extra   Additional resolver query variables.
 	 * @return mixed
 	 */
-	public static function resolve_uri( $node, $uri, $context ) {
+	public static function resolve_uri( $node, $uri, $context, $wp = null, $extra = '' ) {
+		if ( self::$delegating ) {
+			self::$delegating = false;
+			return $node;
+		}
 		if ( null !== $node || ! is_string( $uri ) || ! $context instanceof AppContext ) {
 			return $node;
 		}
-		$path = (string) wp_parse_url( $uri, PHP_URL_PATH );
-		if ( '' === $path ) {
-			return $node;
+		$slug = Languages::of_url( $uri );
+		if ( null === $slug ) {
+			// Without a unique URL language, never let WordPress guess a front
+			// page or translated node. Unconfigured sites keep native resolution.
+			return Languages::all() ? self::nothing() : $node;
 		}
-		$language = Languages::by_home_path( $path );
-		$page_id  = $language ? self::front_page_id( $language->slug ) : null;
-		return $page_id ? $context->get_loader( 'post' )->load_deferred( $page_id ) : $node;
+		$selectors = $extra;
+		if ( is_string( $selectors ) ) {
+			parse_str( $selectors, $selectors );
+		}
+		if ( is_array( $selectors ) ) {
+			unset( $selectors['nodeType'], $selectors['asPreview'], $selectors['lang'] );
+		}
+		if ( empty( $selectors ) && Languages::is_home_url( $uri, $slug ) ) {
+			$page_id = self::front_page_id( $slug );
+			if ( $page_id ) {
+				return $context->get_loader( 'post' )->load_deferred( $page_id );
+			}
+		}
+
+		// NodeResolver rejects secondary domains and loses host/query before its
+		// post hook. Give it a local URI, keeping the original language in a
+		// try/finally scope rather than a last-URI cache shared by aliases.
+		if ( PLL()->links_model instanceof \PLL_Links_Abstract_Domain ) {
+			if ( ! is_array( $extra ) ) {
+				parse_str( (string) $extra, $extra );
+			}
+			$extra['lang'] = $slug;
+		}
+		$parts = wp_parse_url( $uri );
+		$local = $parts['path'] ?? '/';
+		if ( isset( $parts['query'] ) ) {
+			// A root path makes NodeResolver bypass WP_Query, even with selectors.
+			if ( '/' === Languages::site_path( $local ) ) {
+				$local = '';
+			}
+			$local .= '?' . $parts['query'];
+		}
+		if ( '/' === Languages::site_path( $local ) && ! empty( $selectors ) ) {
+			$local = '?' . ( is_array( $selectors ) ? http_build_query( $selectors ) : '' );
+		}
+		if ( isset( $parts['fragment'] ) ) {
+			$local .= '#' . $parts['fragment'];
+		}
+		// Pretty rewrite rules can mistake a query-only URI for a post slug.
+		// Keep public query selectors parsed by NodeResolver, not that synthetic
+		// name (or its rewrite 404). Never promote URL args to private query vars.
+		$query_only = 0 === strpos( $local, '?' );
+		$fix_query  = static function ( $vars ) use ( $query_only ) {
+			if ( $query_only && is_array( $vars ) ) {
+				foreach ( array( 'name', 'pagename' ) as $key ) {
+					if ( isset( $vars[ $key ], $vars['uri'] ) && $vars['uri'] === $vars[ $key ] ) {
+						unset( $vars[ $key ] );
+					}
+				}
+				unset( $vars['error'] );
+			}
+			return $vars;
+		};
+		add_filter( 'request', $fix_query, -PHP_INT_MAX );
+		self::$languages[] = $slug;
+		self::$delegating  = true;
+		try {
+			$resolved = ( new \WPGraphQL\Data\NodeResolver( $context ) )->resolve_uri( $local, $extra );
+			return null === $resolved ? self::nothing() : $resolved;
+		} finally {
+			remove_filter( 'request', $fix_query, -PHP_INT_MAX );
+			array_pop( self::$languages );
+			self::$delegating = false;
+		}
+	}
+
+	/**
+	 * A non-null refusal prevents NodeResolver from continuing its fallback.
+	 *
+	 * @return \GraphQL\Deferred
+	 */
+	private static function nothing() {
+		return new \GraphQL\Deferred(
+			static function () {
+				return null;
+			}
+		);
 	}
 
 	/**

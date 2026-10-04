@@ -99,6 +99,21 @@ language.
   language's has `/`.
 - A URI resolves only to content in its own language: `/en/sobre/` is `null`,
   even though WordPress would find the Portuguese `sobre` page.
+- Separate language domains/subdomains require a full URL, such as
+  `https://en.example.com/about/`. Hostless paths are ambiguous and return
+  `null`; the GraphQL request's host or current language is never guessed.
+- Query-based language URLs retain `lang` and content selectors, such as
+  `/?page_id=123&lang=en`. Relative URLs must include a valid `lang`;
+  a full URL without `lang` identifies the default only when Polylang hides it.
+- Directory URIs remain site-relative (`/en/about/`), including when WordPress
+  is installed under `/blog`; `/blog/en/about/` and full URLs also work.
+  Unknown hosts and wrong-language content return `null`. When every language
+  has a visible directory prefix, an unprefixed URL is unresolved (`null`).
+
+`uri` remains a path-only field: it cannot distinguish language homes on separate
+hosts or query-based URLs. Use `homeUrl` for language homes, full language URLs
+for domain-based content, or explicit `lang` for query-based content. A home URL
+with content query parameters is not treated as the static front page.
 
 `homeUrl` and `uri` are the language's home (`https://example.com/en/`) even
 when Polylang's "front page URL contains the language code" option is off. A
@@ -144,6 +159,16 @@ composer analyse     # PHPStan
 tests/integration/run.sh
 POLYLANG_DIR=../polylang-pro tests/integration/run.sh   # against Polylang Pro
 ```
+
+URL regressions can be run without resetting `.test-site`:
+
+```sh
+tests/integration/run-language-urls.sh
+```
+
+This uses a separate temporary database and WordPress root to test domains,
+subdomains, query URLs, directories, subdirectory installations, ambiguous
+relative URLs, and wrong-language content against the installed plugins.
 
 The empty-language schema regression can be run without resetting `.test-site`:
 
