@@ -75,13 +75,54 @@ final class Front_Pages {
 		if ( null === $expected ) {
 			return $node;
 		}
+		return self::in_other_language( $queried_object, $expected ) ? $nothing : $node;
+	}
+
+	/**
+	 * Whether a post or term belongs to a language other than `$expected`.
+	 * Untranslated types and content without a language belong to none.
+	 *
+	 * @param mixed  $item     A post, term, or anything else.
+	 * @param string $expected The URL's language slug.
+	 */
+	private static function in_other_language( $item, string $expected ): bool {
 		$actual = null;
-		if ( $queried_object instanceof \WP_Post && pll_is_translated_post_type( $queried_object->post_type ) ) {
-			$actual = pll_get_post_language( $queried_object->ID, 'slug' );
-		} elseif ( $queried_object instanceof \WP_Term && pll_is_translated_taxonomy( $queried_object->taxonomy ) ) {
-			$actual = pll_get_term_language( $queried_object->term_id, 'slug' );
+		if ( $item instanceof \WP_Post && pll_is_translated_post_type( $item->post_type ) ) {
+			$actual = pll_get_post_language( $item->ID, 'slug' );
+		} elseif ( $item instanceof \WP_Term && pll_is_translated_taxonomy( $item->taxonomy ) ) {
+			$actual = pll_get_term_language( $item->term_id, 'slug' );
 		}
-		return is_string( $actual ) && '' !== $actual && $actual !== $expected ? $nothing : $node;
+		return is_string( $actual ) && '' !== $actual && $actual !== $expected;
+	}
+
+	/**
+	 * Resolves a #comment-ID URI like NodeResolver does, through the comment
+	 * loader and its visibility checks, then refuses a comment whose post is
+	 * in another language than the URL's. NodeResolver returns comments before
+	 * `graphql_resolve_uri`, so check_language never sees them. A missing or
+	 * hidden comment is null; a post without a language passes, as it does
+	 * at its own URL.
+	 *
+	 * @param AppContext $context    The request's context.
+	 * @param int        $comment_id The comment's ID.
+	 * @param string     $slug       The URL's language slug.
+	 * @return \GraphQL\Deferred
+	 */
+	private static function comment( AppContext $context, int $comment_id, string $slug ) {
+		$loader = $context->get_loader( 'comment' );
+		// Buffer now so sibling resolvers share a batch before it loads.
+		$loader->buffer( array( $comment_id ) );
+		return new \GraphQL\Deferred(
+			static function () use ( $loader, $comment_id, $slug ) {
+				$comment = $loader->load( $comment_id );
+				if ( ! $comment instanceof \WPGraphQL\Model\Comment ) {
+					return null;
+				}
+				$data = get_comment( (int) $comment->databaseId );
+				$post = $data instanceof \WP_Comment ? get_post( (int) $data->comment_post_ID ) : null;
+				return $post instanceof \WP_Post && ! self::in_other_language( $post, $slug ) ? $comment : null;
+			}
+		);
 	}
 
 	/**
@@ -122,6 +163,11 @@ final class Front_Pages {
 			// Without a unique URL language, never let WordPress guess a front
 			// page or translated node. Unconfigured sites keep native resolution.
 			return Languages::all() ? self::nothing() : $node;
+		}
+		// The same match as NodeResolver's comment shortcut, which ignores the
+		// rest of the URI and so never reaches check_language.
+		if ( preg_match( '/#comment-(\d+)/', $uri, $comment_match ) && absint( $comment_match[1] ) ) {
+			return self::comment( $context, absint( $comment_match[1] ), $slug );
 		}
 		$selectors = $extra;
 		if ( is_string( $selectors ) ) {

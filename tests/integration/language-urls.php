@@ -204,4 +204,147 @@ gq_assert_homes(
 		'en' => $gq_ids['home'],
 	)
 );
+
+/**
+ * Resolves URIs as aliases of one request and compares each result: a
+ * comment's or page's database ID, or null.
+ *
+ * @param array<string,string>   $uris     URIs by alias.
+ * @param array<string,int|null> $expected Expected results by alias.
+ */
+function gq_assert_nodes( array $uris, array $expected ): void {
+	$fields = '';
+	foreach ( $uris as $alias => $uri ) {
+		$fields .= $alias . ': nodeByUri(uri: ' . wp_json_encode( $uri ) . ') { __typename ... on Comment { databaseId } ... on Page { databaseId } } ';
+	}
+	$result = graphql( array( 'query' => '{ ' . $fields . '}' ) );
+	foreach ( $expected as $alias => $value ) {
+		if ( ! empty( $result['errors'] ) || ( $result['data'][ $alias ]['databaseId'] ?? null ) !== $value ) {
+			WP_CLI::error( 'Nodes ' . wp_json_encode( $uris ) . ': expected ' . wp_json_encode( $expected ) . ', got ' . wp_json_encode( $result ) );
+		}
+	}
+}
+
+/**
+ * A page's URL in a language: its path, or its page_id in query mode.
+ *
+ * @param string $home The language's home URL.
+ * @param string $slug The page's slug.
+ * @param string $mode The URL mode.
+ */
+function gq_page_url( string $home, string $slug, string $mode ): string {
+	if ( 'query' !== $mode ) {
+		return $home . $slug . '/';
+	}
+	return $home . ( false === strpos( $home, '?' ) ? '?' : '&' ) . 'page_id=' . get_page_by_path( $slug )->ID;
+}
+
+// NodeResolver answers #comment-ID before graphql_resolve_uri; a comment URL
+// still resolves only in its post's language, and only for those who may see it.
+$gq_lang_less = wp_insert_post(
+	array(
+		'post_type'   => 'page',
+		'post_title'  => 'Sem idioma',
+		'post_name'   => 'sem-idioma',
+		'post_status' => 'publish',
+	)
+);
+wp_delete_object_term_relationships( $gq_lang_less, 'language' );
+clean_post_cache( $gq_lang_less );
+$gq_comments = array();
+foreach (
+	array(
+		'about'     => array( 'about', 1 ),
+		'sobre'     => array( 'sobre', 1 ),
+		'held'      => array( 'about', 0 ),
+		'draft'     => array( 'contact', 1 ),
+		'lang_less' => array( 'sem-idioma', 1 ),
+	) as $gq_key => list( $gq_slug, $gq_approved )
+) {
+	$gq_comments[ $gq_key ] = wp_insert_comment(
+		array(
+			'comment_post_ID'  => get_page_by_path( $gq_slug )->ID,
+			'comment_content'  => 'Comment ' . $gq_key,
+			'comment_author'   => 'Visitor',
+			'comment_approved' => $gq_approved,
+		)
+	);
+}
+try {
+	if ( false !== pll_get_post_language( $gq_lang_less ) ) {
+		WP_CLI::error( 'The language-less page has a language.' );
+	}
+	$gq_en_about  = gq_page_url( $gq_homes['en'], 'about', $gq_mode );
+	$gq_pt_sobre  = gq_page_url( $gq_homes['pt'], 'sobre', $gq_mode );
+	$gq_urls      = array(
+		'en_valid'   => $gq_en_about . '#comment-' . $gq_comments['about'],
+		'en_wrong'   => $gq_en_about . '#comment-' . $gq_comments['sobre'],
+		'pt_valid'   => $gq_pt_sobre . '#comment-' . $gq_comments['sobre'],
+		'pt_wrong'   => $gq_pt_sobre . '#comment-' . $gq_comments['about'],
+		'en_page'    => $gq_en_about,
+		'pt_page'    => $gq_pt_sobre,
+		'missing'    => $gq_en_about . '#comment-999999',
+		'held'       => $gq_en_about . '#comment-' . $gq_comments['held'],
+		'draft'      => gq_page_url( $gq_homes['en'], 'contact', $gq_mode ) . '#comment-' . $gq_comments['draft'],
+		'en_no_lang' => $gq_en_about . '#comment-' . $gq_comments['lang_less'],
+		'pt_no_lang' => $gq_pt_sobre . '#comment-' . $gq_comments['lang_less'],
+		'en_home'    => $gq_homes['en'] . '#comment-' . $gq_comments['about'],
+		'pt_home'    => $gq_homes['pt'] . '#comment-' . $gq_comments['about'],
+	);
+	$gq_anonymous = array(
+		'en_valid'   => $gq_comments['about'],
+		'en_wrong'   => null,
+		'pt_valid'   => $gq_comments['sobre'],
+		'pt_wrong'   => null,
+		'en_page'    => $gq_ids['about'],
+		'pt_page'    => $gq_ids['sobre'],
+		'missing'    => null,
+		'held'       => null,
+		'draft'      => null,
+		'en_no_lang' => $gq_comments['lang_less'],
+		'pt_no_lang' => $gq_comments['lang_less'],
+		'en_home'    => $gq_comments['about'],
+		'pt_home'    => null,
+	);
+	if ( 'directory' === $gq_mode ) {
+		$gq_urls['relative_valid']      = '/en/about/#comment-' . $gq_comments['about'];
+		$gq_urls['relative_wrong']      = '/en/about/#comment-' . $gq_comments['sobre'];
+		$gq_anonymous['relative_valid'] = $gq_comments['about'];
+		$gq_anonymous['relative_wrong'] = null;
+	} elseif ( 'query' !== $gq_mode ) {
+		// Hostless paths name no language on separate hosts.
+		$gq_urls['hostless']      = '/about/#comment-' . $gq_comments['about'];
+		$gq_anonymous['hostless'] = null;
+	}
+	foreach ( $gq_urls as $gq_alias => $gq_uri ) {
+		gq_assert_nodes( array( $gq_alias => $gq_uri ), array( $gq_alias => $gq_anonymous[ $gq_alias ] ) );
+	}
+	// Aliases in either order must keep each URL's language independently.
+	gq_assert_nodes( $gq_urls, $gq_anonymous );
+	gq_assert_nodes( array_reverse( $gq_urls, true ), $gq_anonymous );
+
+	// A moderator sees held comments, still only in their post's language.
+	wp_set_current_user( (int) get_user_by( 'login', 'admin' )->ID );
+	try {
+		gq_assert_nodes(
+			array(
+				'held_wrong' => $gq_pt_sobre . '#comment-' . $gq_comments['held'],
+				'held'       => $gq_urls['held'],
+				'draft'      => $gq_urls['draft'],
+			),
+			array(
+				'held_wrong' => null,
+				'held'       => $gq_comments['held'],
+				'draft'      => $gq_comments['draft'],
+			)
+		);
+	} finally {
+		wp_set_current_user( 0 );
+	}
+} finally {
+	foreach ( $gq_comments as $gq_comment ) {
+		wp_delete_comment( $gq_comment, true );
+	}
+	wp_delete_post( $gq_lang_less, true );
+}
 WP_CLI::success( $gq_mode . ' ' . $args[2] . ' URL regressions passed.' );

@@ -130,6 +130,9 @@ language.
   language's has `/`.
 - A URI resolves only to content in its own language: `/en/sobre/` is `null`,
   even though WordPress would find the Portuguese `sobre` page.
+- Comment URLs (`/en/about/#comment-12`) resolve only when the comment's post
+  is in the URL's language (or has none) and the requester may see the
+  comment; otherwise, as for a missing comment, `null`.
 - Separate language domains/subdomains require a full URL, such as
   `https://en.example.com/about/`. Hostless paths are ambiguous and return
   `null`; the GraphQL request's host or current language is never guessed.
