@@ -34,9 +34,10 @@ final class Schema {
 			return;
 		}
 
-		$codes = array();
+		$code_map = Languages::code_map( $languages );
+		$codes    = array();
 		foreach ( $languages as $language ) {
-			$codes[ Languages::code( $language->slug ) ] = array(
+			$codes[ $code_map[ $language->slug ] ] = array(
 				'value'       => $language->slug,
 				'description' => $language->name,
 			);
@@ -45,7 +46,7 @@ final class Schema {
 		register_graphql_enum_type(
 			'LanguageCodeEnum',
 			array(
-				'description' => __( 'A language Polylang serves, by its code (its slug in upper case).', 'gq-polylang-graphql' ),
+				'description' => __( 'A language Polylang serves, by its normalized upper-case slug; conflicting or reserved names include the full slug in hexadecimal.', 'gq-polylang-graphql' ),
 				'values'      => $codes,
 			)
 		);

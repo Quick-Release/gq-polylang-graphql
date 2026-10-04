@@ -77,9 +77,24 @@ Root fields:
 - `language(code: EN)`.
 - `translateString(string:, language:)`.
 
-`LanguageCodeEnum` has one value per language: its Polylang slug in upper case
-(`pt` → `PT`, `pt-br` → `PT_BR`). `LanguageCodeFilterEnum` adds `DEFAULT` and
-`ALL`.
+`LanguageCodeEnum` has one value per language, normally its Polylang slug in
+upper case with hyphens replaced by underscores (`pt` → `PT`, `pt-br` →
+`PT_BR`). `LanguageCodeFilterEnum` uses the same names and adds `DEFAULT` and
+`ALL`, which always retain their filter sentinel meanings.
+
+When multiple slugs normalize to the same name, **every** member receives
+`NAME__HEX`, where `HEX` is the uppercase hexadecimal encoding of the complete
+slug: `pt-br` → `PT_BR__70742D6272`, `pt_br` → `PT_BR__70745F6272`. Languages
+named `all` or `default` use the same suffix rule even without a collision.
+Ordinary nonconflicting names are reserved first; trailing underscores are
+added if a generated name would collide with one of them. Allocation is
+independent of language order and identical in both enums.
+
+Existing nonconflicting names remain unchanged. Adding/removing a conflicting
+language can change enum names for that collision group (or a generated name
+with a new secondary conflict); clients must update affected query literals
+and variables. Use schema introspection or `languages { slug code }` to discover
+the current names. Polylang slugs and the enums' underlying values do not change.
 
 **Content.** Every post type and taxonomy Polylang translates, and WPGraphQL
 shows, gets these fields:
@@ -125,8 +140,11 @@ headless frontend serves a language's front page at its home.
 - With `language` alone, it reads every location's menu in that language.
 - Without `language`, it reads the default language's menus, as WPGraphQL
   does.
+- Nested `childItems` inherit their parent item's menu; no repeated language
+  argument is needed, including for grandchildren. Explicit language/location
+  arguments narrow that menu scope and cannot switch to another menu.
 - The items of a menu assigned in any language are public. A menu at no
-  location stays private.
+  location stays private (users authorized to edit menus retain access).
 
 ## Coming from WP GraphQL Polylang
 
@@ -169,6 +187,20 @@ tests/integration/run-language-urls.sh
 This uses a separate temporary database and WordPress root to test domains,
 subdomains, query URLs, directories, subdirectory installations, ambiguous
 relative URLs, and wrong-language content against the installed plugins.
+
+Hierarchical translated-menu scope and privacy regressions also use a separate
+temporary database and WordPress root:
+
+```sh
+tests/integration/run-nested-menus.sh
+```
+
+Language enum collision, serialization, and input regressions use an isolated
+database as well:
+
+```sh
+tests/integration/run-language-enums.sh
+```
 
 The empty-language schema regression can be run without resetting `.test-site`:
 

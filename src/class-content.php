@@ -99,7 +99,32 @@ final class Content {
 		if ( is_array( $query_args ) && in_array( 'nav_menu_item', (array) ( $query_args['post_type'] ?? array() ), true ) ) {
 			return self::without_where_args( $query_args );
 		}
-		return self::with_language( $query_args, $args );
+		$query_args = self::with_language( $query_args, $args );
+		$where      = is_array( $args ) && isset( $args['where'] ) && is_array( $args['where'] ) ? $args['where'] : array();
+		if ( is_array( $query_args ) && 'all' === self::lang_query_var( $where ) ) {
+			// Polylang removes lang=all as its admin "all languages" shortcut.
+			// A real language with that slug needs an explicit taxonomy scope;
+			// our ALL sentinel remains lang='', so it never reaches this branch.
+			$language = Languages::get( 'all' );
+			$scope    = array(
+				'taxonomy'         => 'language',
+				'field'            => 'term_id',
+				'terms'            => array( $language ? $language->term_id : 0 ),
+				'include_children' => false,
+			);
+			$existing = isset( $query_args['tax_query'] ) && is_array( $query_args['tax_query'] ) ? $query_args['tax_query'] : array();
+			// Preserve taxonomy filters, including their OR groups, as constraints.
+			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
+			$query_args['tax_query'] = $existing
+				? array(
+					'relation' => 'AND',
+					$existing,
+					$scope,
+				)
+				: array( $scope );
+			$query_args['lang']      = '';
+		}
+		return $query_args;
 	}
 
 	/**

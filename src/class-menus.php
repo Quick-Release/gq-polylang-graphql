@@ -8,6 +8,8 @@
 namespace GQ\PolylangGraphQL;
 
 use WPGraphQL\Data\Connection\MenuItemConnectionResolver;
+use WPGraphQL\Model\Menu;
+use WPGraphQL\Model\MenuItem;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -30,7 +32,7 @@ final class Menus {
 	}
 
 	/**
-	 * Makes public the items of a menu Polylang assigned to a location in
+	 * Makes public menus and items Polylang assigned to a location in
 	 * any language. WPGraphQL shows the public only items of menus in the
 	 * `nav_menu_locations` theme mod, which holds the default language's.
 	 *
@@ -40,7 +42,13 @@ final class Menus {
 	 * @return bool|null
 	 */
 	public static function is_private( $is_private, $model_name, $data ) {
-		if ( null !== $is_private || 'MenuItemObject' !== $model_name || ! $data instanceof \WP_Post ) {
+		if ( null !== $is_private ) {
+			return $is_private;
+		}
+		if ( 'MenuObject' === $model_name && $data instanceof \WP_Term && 'nav_menu' === $data->taxonomy ) {
+			return in_array( (int) $data->term_id, self::assigned_menu_ids(), true ) ? false : $is_private;
+		}
+		if ( 'MenuItemObject' !== $model_name || ! $data instanceof \WP_Post ) {
 			return $is_private;
 		}
 		$menus = wp_get_object_terms( $data->ID, 'nav_menu', array( 'fields' => 'ids' ) );
@@ -89,7 +97,7 @@ final class Menus {
 				if ( is_array( $fields ) && substr( (string) $type_name, -strlen( 'ToMenuItemConnectionWhereArgs' ) ) === 'ToMenuItemConnectionWhereArgs' ) {
 					$fields['language'] = array(
 						'type'        => 'LanguageCodeEnum',
-						'description' => __( 'The language whose menus to read: at `location`, that language\'s menu there. The default language\'s when left out.', 'gq-polylang-graphql' ),
+						'description' => __( 'The language whose menus to read: at `location`, that language\'s menu there. Defaults to the source menu for nested connections, or the default language at the root. Explicit filters narrow the source menu.', 'gq-polylang-graphql' ),
 					);
 				}
 				return $fields;
@@ -111,31 +119,66 @@ final class Menus {
 		if ( ! $resolver instanceof MenuItemConnectionResolver || ! is_array( $query_args ) ) {
 			return $query_args;
 		}
-		$where = is_array( $unfiltered_args ) && isset( $unfiltered_args['where'] ) && is_array( $unfiltered_args['where'] ) ? $unfiltered_args['where'] : array();
-		if ( empty( $where['language'] ) ) {
-			return $query_args;
+		$where    = is_array( $unfiltered_args ) && isset( $unfiltered_args['where'] ) && is_array( $unfiltered_args['where'] ) ? $unfiltered_args['where'] : array();
+		$source   = $resolver->get_source();
+		$scoped   = $source instanceof MenuItem || $source instanceof Menu;
+		$location = isset( $where['location'] ) ? (string) $where['location'] : null;
+		if ( $scoped ) {
+			// This filter runs in the constructor, before childItems adds its
+			// parent metadata and Menu.menuItems replaces the taxonomy query.
+			// WPGraphQL's public model field names use camelCase.
+			// phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+			$menu_id  = $source instanceof MenuItem ? (int) $source->menuDatabaseId : (int) $source->databaseId;
+			$menu_ids = $menu_id ? array( $menu_id ) : array();
+			if ( ! empty( $where['language'] ) ) {
+				$menu_ids = array_values( array_intersect( $menu_ids, self::menu_ids( (string) $where['language'], $location ) ) );
+			} elseif ( null !== $location ) {
+				$assigned    = array();
+				$by_language = self::theme_locations()[ $location ] ?? array();
+				foreach ( is_array( $by_language ) ? $by_language : array() as $assigned_id ) {
+					$assigned[] = (int) $assigned_id;
+				}
+				$native = get_nav_menu_locations();
+				if ( ! empty( $native[ $location ] ) ) {
+					$assigned[] = (int) $native[ $location ];
+				}
+				$menu_ids = array_values( array_intersect( $menu_ids, $assigned ) );
+			}
+			if ( empty( $menu_ids ) ) {
+				// Menu's registration overwrites tax_query after this hook. A
+				// disjoint explicit selection must remain empty even afterwards.
+				$query_args['post__in'] = array( 0 );
+			}
+		} else {
+			if ( empty( $where['language'] ) ) {
+				return $query_args;
+			}
+			$menu_ids = self::menu_ids( (string) $where['language'], $location );
 		}
 
-		$menu_ids = self::menu_ids( (string) $where['language'], isset( $where['location'] ) ? (string) $where['location'] : null );
-
 		$tax_query = isset( $query_args['tax_query'] ) && is_array( $query_args['tax_query'] ) ? $query_args['tax_query'] : array();
-		$tax_query = array_values(
-			array_filter(
-				$tax_query,
-				static function ( $clause ) {
-					return ! ( is_array( $clause ) && isset( $clause['taxonomy'] ) && 'nav_menu' === $clause['taxonomy'] );
-				}
-			)
-		);
-		// No menu means no items, as WPGraphQL does for an empty location.
-		$tax_query[]             = array(
+		foreach ( $tax_query as $key => $clause ) {
+			if ( is_array( $clause ) && isset( $clause['taxonomy'] ) && 'nav_menu' === $clause['taxonomy'] ) {
+				unset( $tax_query[ $key ] );
+			}
+		}
+		// Replace WPGraphQL's default-language location limit with the source
+		// menu, without changing parent metadata, pagination or node loaders.
+		$scope = array(
 			'taxonomy'         => 'nav_menu',
 			'field'            => 'term_id',
 			'terms'            => empty( $menu_ids ) ? array( 0 ) : $menu_ids,
 			'include_children' => false,
 			'operator'         => 'IN',
 		);
-		$query_args['tax_query'] = $tax_query; // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
+		// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
+		$query_args['tax_query'] = count( $tax_query ) > ( isset( $tax_query['relation'] ) ? 1 : 0 )
+			? array(
+				'relation' => 'AND',
+				$tax_query,
+				$scope,
+			)
+			: array( $scope );
 		return Content::without_where_args( $query_args );
 	}
 

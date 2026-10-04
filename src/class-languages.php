@@ -11,8 +11,8 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Reads Polylang's languages through its public API (pll_* functions and
- * PLL()->model), and maps them to the schema's names: a language's code is its
- * Polylang slug in upper case (`pt` → `PT`, `pt-br` → `PT_BR`).
+ * PLL()->model), and maps them to collision-safe schema names. Unique ordinary
+ * slugs retain their normalized upper-case names (`pt` → `PT`, `pt-br` → `PT_BR`).
  */
 final class Languages {
 
@@ -54,10 +54,98 @@ final class Languages {
 	/**
 	 * The schema's enum value name for a language slug.
 	 *
+	 * Configured slugs use the same allocation as registration. An unknown slug
+	 * is allocated as an additional language without changing configured state.
+	 *
 	 * @param string $slug The language slug.
 	 */
 	public static function code( string $slug ): string {
-		return strtoupper( (string) preg_replace( '/[^A-Za-z0-9_]/', '_', $slug ) );
+		$slugs   = array_map(
+			static function ( $language ) {
+				return $language->slug;
+			},
+			self::all()
+		);
+		$slugs[] = $slug;
+		return self::allocate_codes( $slugs )[ $slug ];
+	}
+
+	/**
+	 * Slug-to-enum names shared by both language enums, without cached state.
+	 *
+	 * Passing the registration's language snapshot avoids a second model read.
+	 * All members of normalized collision groups and ALL/DEFAULT get a suffix
+	 * containing the full slug's uppercase hexadecimal bytes. Ordinary names
+	 * are reserved first; generated names append underscores until unused.
+	 *
+	 * @param \PLL_Language[]|null $languages Languages to map, or the configured set.
+	 * @return array<string,string>
+	 */
+	public static function code_map( ?array $languages = null ): array {
+		$slugs = array_map(
+			static function ( $language ) {
+				return $language->slug;
+			},
+			$languages ?? self::all()
+		);
+		return self::allocate_codes( $slugs );
+	}
+
+	/**
+	 * Allocate deterministically, independent of Polylang's language order.
+	 *
+	 * @param string[] $slugs Raw language slugs.
+	 * @return array<string,string>
+	 */
+	private static function allocate_codes( array $slugs ): array {
+		$slugs = array_values( array_unique( $slugs ) );
+		sort( $slugs, SORT_STRING );
+		$bases  = array();
+		$counts = array();
+		foreach ( $slugs as $slug ) {
+			$base            = self::normalized_code( $slug );
+			$bases[ $slug ]  = $base;
+			$counts[ $base ] = ( $counts[ $base ] ?? 0 ) + 1;
+		}
+
+		$used  = array(
+			'ALL'     => true,
+			'DEFAULT' => true,
+		);
+		$codes = array();
+		foreach ( $slugs as $slug ) {
+			$base = $bases[ $slug ];
+			if ( 1 === $counts[ $base ] && ! isset( $used[ $base ] ) ) {
+				$codes[ $slug ] = $base;
+				$used[ $base ]  = true;
+			}
+		}
+		foreach ( $slugs as $slug ) {
+			if ( isset( $codes[ $slug ] ) ) {
+				continue;
+			}
+			$code = $bases[ $slug ] . '__' . strtoupper( bin2hex( $slug ) );
+			while ( isset( $used[ $code ] ) ) {
+				$code .= '_';
+			}
+			$codes[ $slug ] = $code;
+			$used[ $code ]  = true;
+		}
+		ksort( $codes, SORT_STRING );
+		return $codes;
+	}
+
+	/**
+	 * Normalize defensively, including slugs outside Polylang's validated set.
+	 *
+	 * @param string $slug Raw language slug.
+	 */
+	private static function normalized_code( string $slug ): string {
+		$code = strtoupper( (string) preg_replace( '/[^A-Za-z0-9_]/', '_', $slug ) );
+		if ( '' === $code || '_' === $code || ctype_digit( $code[0] ) || 0 === strpos( $code, '__' ) ) {
+			$code = 'LANG_' . $code;
+		}
+		return $code;
 	}
 
 	/**
